@@ -1,24 +1,34 @@
-use std;
-use num_dual::*;
+use std::{fmt::Display, ops::{Sub, Div}};
+use num_dual::{DualNumFloat};
 
-fn get_dual(x: f32) -> DualVec<f32, f32, 1> {
-    Dual32::from_re(x)
+pub trait Derivable<T> where T: DualNumFloat {
+    fn execute_derivative(&self) -> Self;
+    fn zeroth_derivative(&self) -> T;
+    fn first_derivative(&self) -> T;
+    fn second_derivative(&self) -> T;
 }
 
-fn newton<'a, F>(f: F, guess: f32, patience: i32, tolerance: f32) -> Option<f32> 
+pub trait Coerceable<T> where T: DualNumFloat{
+    fn coerce_to(&self) -> T;
+    fn coerce_from(value: T) -> Self;
+}
+
+fn newton<'a, F, N, T>(f: F, guess: T, patience: i32, tolerance: T) -> Option<T>
 where
-    F: Fn(DualVec<f32, f32, 1>) -> DualVec<f32, f32, 1> + Send + Sync + 'a
+    F: Fn(N) -> N + Send + Sync + 'a,
+    N: Derivable<T> + Coerceable<T> + Display + Copy,
+    T: DualNumFloat
 {
-    let mut current: f32 = guess;
+    let mut current: T = guess;
     let mut count = 0;
     loop {
         count += 1;
-        let x_dual = Dual32::from_re(current).derive();
-        let z_dual = f(x_dual);
-        let next = x_dual.re - z_dual.re / z_dual.eps[0];
+        let x = N::coerce_from(current).execute_derivative();
+        let z = f(x);
+        let next = x.zeroth_derivative() - z.zeroth_derivative() / z.first_derivative();
         let diff = next - current;
         if diff.abs() < tolerance {
-            println!("Found route at: {}", next);
+            println!("Found root at: {}", next);
             return Some(next);
         } else {
             if count > patience {
@@ -32,21 +42,23 @@ where
     }
 }
 
-fn find_bisections<'a, F>(f: F, lower: f32, upper: f32, resolution: i32) -> Vec<(f32, f32)>
+fn find_bisections<'a, F, N, T>(f: F, lower: T, upper: T, resolution: i32) -> Vec<(T, T)>
 where
-    F: Fn(DualVec<f32, f32, 1>) -> DualVec<f32, f32, 1> + Sync + Send + Copy + 'a
+    F: Fn(N) -> N + Sync + Send + Copy + 'a,
+    N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
+    T: DualNumFloat
 {
-    let step = (upper - lower) / (resolution as f32 + std::f32::consts::PI);
-    // Add off-set to resolution to deal with roots at middle of lower and upper range
-    let mut values: Vec<(f32, f32)> = Vec::new();
+    let step = (upper - lower) / T::from(resolution).unwrap() + T::epsilon();
+    // Add off-set to step to deal with roots at middle of lower and upper range
+    let mut values: Vec<(T, T)> = Vec::new();
 
     for i in 0..resolution {
-        let a = lower + step * i as f32;
-        let b = lower + step * (i + 1) as f32;
-        let fa = f(get_dual(a));
-        let fb = f(get_dual(b));
-        let pos2neg = fa.re > 0.0 && fb.re < 0.0;
-        let neg2pos = fa.re < 0.0 && fb.re > 0.0;
+        let a = lower + step * T::from(i).unwrap();
+        let b = lower + step * T::from(i+1).unwrap();
+        let fa = f(N::coerce_from(a));
+        let fb = f(N::coerce_from(b));
+        let pos2neg = fa.zeroth_derivative() > T::zero() && fb.zeroth_derivative() < T::zero();
+        let neg2pos = fa.zeroth_derivative() < T::zero() && fb.zeroth_derivative() > T::zero();
         if pos2neg || neg2pos {
             values.push((a, b));
         }
@@ -54,9 +66,11 @@ where
     values
 }
 
-pub fn root_search<'a, F>(f: F, lower: f32, upper: f32, resolution: i32, patience: i32, tolerance: f32) -> (Vec<f32>, Vec<(f32, f32)>)
+pub fn root_search<'a, F, N, T>(f: F, lower: T, upper: T, resolution: i32, patience: i32, tolerance: T) -> (Vec<T>, Vec<(T, T)>)
 where
-    F: Fn(DualVec<f32, f32, 1>) -> DualVec<f32, f32, 1> + Sync + Send + Copy + 'a
+    F: Fn(N) -> N + Sync + Send + Copy + 'a,
+    N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
+    T: DualNumFloat
 {
     if lower > upper {
         panic!("Lower bound must be greater than upper bound")
@@ -65,14 +79,12 @@ where
         panic!("Bounds cannot be the same")
     }
     let bisections = find_bisections(f, lower, upper, resolution);
-    // TODO: Launch threading here to find the the root contained within each values pair,
-    // which are the lower and upper bounds (a_dual, b_dual) of a suspected root.
-    let mut roots: Vec<f32> = Vec::new();
+    let mut roots: Vec<T> = Vec::new();
     for bisection in &bisections {
-        let res = 100;
-        let step = (bisection.1 - bisection.0) / (res as f32);
-        for i in 0..res {
-            let guess = bisection.0 + (i as f32 * step);
+        let res = T::from(100).unwrap();
+        let step = (bisection.1 - bisection.0) / res;
+        for i in 0..res.to_i32().unwrap() {
+            let guess = bisection.0 + (T::from(i).unwrap() * step);
             let root = newton(f, guess, patience, tolerance);
             if root.is_none() {
                 break;
@@ -94,14 +106,48 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_dual::{Dual32, DualNumFloat, DualNum};
+
+    impl Derivable<f32> for Dual32 {
+        fn execute_derivative(&self) -> Self {
+            return self.derive()
+        }
+        fn zeroth_derivative(&self) -> f32 {
+            return self.re
+        }
+        fn first_derivative(&self) -> f32 {
+            return self.eps[0]
+        }
+        fn second_derivative(&self) -> f32 {
+            return self.eps[1]
+        }
+    }
+    
+    impl <T: DualNumFloat> Coerceable<T> for Dual32 {
+        fn coerce_to(&self) -> T {
+            return T::from(self.re).unwrap()
+        }
+        fn coerce_from(value: T) -> Self {
+            return Dual32::from_re(value.to_f32().unwrap())
+        }
+    }
 
     #[test]
     fn find_sine_root_newton() {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let root = newton(&sine, 2.0, 1000, 0.0001);
+        let root = newton::<_,Dual32,f32>(&sine, 2.0, 1000, 0.0001);
         assert_eq!(std::f32::consts::PI, root.unwrap())
+    }
+
+    #[test]
+    fn find_cosine_root_newton() {
+        fn cosine<D: DualNum<f32>>(x: D) -> D {
+            x.cos()
+        }
+        let root = newton::<_,Dual32,f32>(&cosine, 2.0, 1000, 0.0001);
+        assert_eq!(std::f32::consts::PI / 2.0, root.unwrap())
     }
 
     #[test]
@@ -109,7 +155,7 @@ mod tests {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let bisections = find_bisections(&sine, -5.0, 5.0, 2000);
+        let bisections = find_bisections::<_,Dual32,f32>(&sine, -5.0, 5.0, 2000);
         for bisection in &bisections {
             println!("bisection: ({},{})", bisection.0, bisection.1)
         }
@@ -117,15 +163,30 @@ mod tests {
     }
 
     #[test]
+    fn find_cosine_bisections() {
+        fn cosine<D: DualNum<f32>>(x: D) -> D {
+            x.cos()
+        }
+        let bisections = find_bisections::<_,Dual32,f32>(&cosine, -5.0, 5.0, 2000);
+        for bisection in &bisections {
+            println!("bisection: ({},{})", bisection.0, bisection.1)
+        }
+        assert_eq!(bisections.len(), 4)
+    }
+
+    #[test]
     fn find_sine_roots() {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let roots = root_search(&sine, -5.0, 5.0, 2000, 1000, 0.0001);
+        let roots = root_search::<_,Dual32,f32>(&sine, -5.0, 5.0, 2000, 1000, 0.0001);
         for root in &roots.0 {
             println!("root: {}", root);
         }
-        assert_eq!(roots.0.len(), 3)
+        assert_eq!(roots.0.len(), 3);
+        assert!(roots.0.contains(&std::f32::consts::PI));
+        assert!(roots.0.contains(&(-std::f32::consts::PI)));
+        assert!(roots.0.contains(&0.0));
     }
 
     #[test]
@@ -133,11 +194,15 @@ mod tests {
         fn cosine<D: DualNum<f32>>(x: D) -> D {
             x.cos()
         }
-        let roots = root_search(&cosine, -5.0, 5.0, 2000, 1000, 0.0001);
+        let roots = root_search::<_,Dual32,f32>(&cosine, -5.0, 5.0, 2000, 1000, 0.0001);
         for root in &roots.0 {
             println!("root: {}", root);
         }
-        assert_eq!(roots.0.len(), 4)
+        assert_eq!(roots.0.len(), 4);
+        assert!(roots.0.contains(&std::f32::consts::FRAC_PI_2));
+        assert!(roots.0.contains(&(-std::f32::consts::FRAC_PI_2)));
+        assert!(roots.0.contains(&(std::f32::consts::FRAC_PI_2 * 3.0)));
+        assert!(roots.0.contains(&(-std::f32::consts::FRAC_PI_2 * 3.0)));
     }
 
 
