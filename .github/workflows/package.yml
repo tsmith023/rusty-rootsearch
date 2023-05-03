@@ -1,10 +1,10 @@
-name: Package Rust Binary
+name: Publish Rust Crate
 on:
   push:
     branches: [main]
 jobs:
   test:
-    name: Test Rust Binary
+    name: Test Crate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,7 +19,7 @@ jobs:
         run: cargo test
 
   publish:
-    name: Publish Rust Binary
+    name: Publish Crate
     runs-on: ubuntu-latest
     needs:
       - test
