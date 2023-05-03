@@ -1,4 +1,4 @@
-# rusty-search
+# rusty-rootsearch
 
 This is a small Rust-package that performs Newton's method for finding the roots of a function using the method of bisections.
 
