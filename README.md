@@ -2,7 +2,7 @@
 
 This is a small Rust-package that performs Newton's method for finding the roots of a function using the method of bisections.
 
-It stands completely on the shoulders of the [https://docs.rs/num-dual/latest/num_dual/](num_dual) crate that implements
+It stands completely on the shoulders of the [num_dual](https://docs.rs/num-dual/latest/num_dual/) crate that implements
 auto-differentation for floating point numbers.
 
 In an effort to generalise the implementation, the traits `Derivable` and `Coercable` are defined that allow the user to
