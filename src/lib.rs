@@ -1,4 +1,5 @@
 use std::{fmt::Display, ops::{Sub, Div}};
+// use std::{sync::mpsc::{Sender, Receiver, channel}, thread::{Thread,spawn, JoinHandle}};
 use num_dual::{DualNumFloat};
 
 pub trait Derivable<T> where T: DualNumFloat {
@@ -42,9 +43,9 @@ where
     }
 }
 
-fn find_bisections<'a, F, N, T>(f: F, lower: T, upper: T, resolution: i32) -> Vec<(T, T)>
+fn find_bisections<F, N, T>(f: F, lower: T, upper: T, resolution: i32) -> Vec<(T, T)>
 where
-    F: Fn(N) -> N + Sync + Send + Copy + 'a,
+    F: Fn(N) -> N + Sync + Send + Copy,
     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
     T: DualNumFloat
 {
@@ -66,9 +67,62 @@ where
     values
 }
 
-pub fn root_search<'a, F, N, T>(f: F, lower: T, upper: T, resolution: i32, patience: i32, tolerance: T) -> (Vec<T>, Vec<(T, T)>)
+// fn find_bisections<F, N, T>(f: F, lower: T, upper: T) -> Vec<(T,T)>
+// where
+//     F: Fn(N) -> N + Sync + Send + Copy + 'static,
+//     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
+//     T: DualNumFloat
+// {
+//     let tolerance = (upper - lower) / T::from(1000).unwrap();
+//     let mut values: Vec<(T, T)> = Vec::new();
+//     let (values_tx, values_rx): (Sender<(T,T)>, Receiver<(T, T)>) = channel();
+//     let (threads_tx, threads_rx): (Sender<JoinHandle<()>>, Receiver<JoinHandle<()>>) = channel();
+//     resolve_bisections(f.clone(), lower, upper, tolerance, values_tx, threads_tx);
+//     for bisection in values_rx {
+//         println!("Found root between {} and {}", bisection.0, bisection.1);
+//         values.push(bisection);
+//     }
+//     for handle in threads_rx {
+//         println!("Waiting for thread to finish");
+//         handle.join().unwrap()
+//     }
+//     values
+// }
+
+// fn resolve_bisections<F, N, T>(f: F, lower: T, upper: T, tolerance: T, values_tx: Sender<(T,T)>, threads_tx: Sender<JoinHandle<()>>)
+// where
+//     F: Fn(N) -> N + Sync + Send + Copy + 'static,
+//     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
+//     T: DualNumFloat
+// {
+//     let threads_tx_clone = threads_tx.clone();
+//     let child = spawn(move || {
+//         let fa = f(N::coerce_from(lower));
+//         let fb = f(N::coerce_from(upper));
+
+//         let pos2neg = fa.zeroth_derivative() > T::zero() && fb.zeroth_derivative() < T::zero();
+//         let neg2pos = fa.zeroth_derivative() < T::zero() && fb.zeroth_derivative() > T::zero();
+
+//         if pos2neg || neg2pos {
+//             if upper - lower < tolerance {
+//                 values_tx.send((lower, upper)).unwrap();
+//             } else {
+//                 let mid = (upper + lower) / T::from(2).unwrap();
+//                 let (threads_tx2, threads_rx): (Sender<JoinHandle<()>>, Receiver<JoinHandle<()>>) = channel();
+//                 resolve_bisections(f.clone(), lower, mid-T::epsilon(), tolerance, values_tx.clone(), threads_tx2.clone());
+//                 resolve_bisections(f.clone(), mid+T::epsilon(), upper, tolerance, values_tx.clone(), threads_tx2);
+//                 for handle in threads_rx {
+//                     threads_tx_clone.send(handle).unwrap();
+//                 }
+//             }
+//         }
+//     });
+//     threads_tx.send(child).unwrap();
+// }
+
+pub fn root_search<F, N, T>(f: F, lower: T, upper: T, patience: i32, tolerance: T, resolution: i32) -> (Vec<T>, Vec<(T, T)>)
 where
-    F: Fn(N) -> N + Sync + Send + Copy + 'a,
+    F: Fn(N) -> N + Sync + Send + Copy,
     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
     T: DualNumFloat
 {
@@ -155,7 +209,7 @@ mod tests {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let bisections = find_bisections::<_,Dual32,f32>(&sine, -5.0, 5.0, 2000);
+        let bisections = find_bisections::<_,Dual32,f32>(&sine, -5.0, 5.0, 1000);
         for bisection in &bisections {
             println!("bisection: ({},{})", bisection.0, bisection.1)
         }
@@ -167,7 +221,7 @@ mod tests {
         fn cosine<D: DualNum<f32>>(x: D) -> D {
             x.cos()
         }
-        let bisections = find_bisections::<_,Dual32,f32>(&cosine, -5.0, 5.0, 2000);
+        let bisections = find_bisections::<_,Dual32,f32>(&cosine, -5.0, 5.0, 1000);
         for bisection in &bisections {
             println!("bisection: ({},{})", bisection.0, bisection.1)
         }
@@ -179,7 +233,7 @@ mod tests {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let roots = root_search::<_,Dual32,f32>(&sine, -5.0, 5.0, 2000, 1000, 0.0001);
+        let roots = root_search::<_,Dual32,f32>(&sine, -5.0, 5.0, 2000, 0.0001, 1000);
         for root in &roots.0 {
             println!("root: {}", root);
         }
@@ -194,7 +248,7 @@ mod tests {
         fn cosine<D: DualNum<f32>>(x: D) -> D {
             x.cos()
         }
-        let roots = root_search::<_,Dual32,f32>(&cosine, -5.0, 5.0, 2000, 1000, 0.0001);
+        let roots = root_search::<_,Dual32,f32>(&cosine, -5.0, 5.0, 2000, 0.0001, 1000);
         for root in &roots.0 {
             println!("root: {}", root);
         }
