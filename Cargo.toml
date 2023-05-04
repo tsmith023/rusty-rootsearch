@@ -1,5 +1,10 @@
 [package]
 name = "rusty-rootsearch"
+description = "This package implements general one-dimensional root-finding algorithms that was build on top of num_dual"
+readme = "README.md"
+repository = "https://github.com/tsmith023/rusty-rootsearch"
+keywords = ["rootsearch", "autodiff"]
+license = "MIT"
 version = "0.1.1"
 edition = "2021"
 
