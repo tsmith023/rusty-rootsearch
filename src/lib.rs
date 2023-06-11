@@ -1,6 +1,6 @@
 use std::{fmt::Display, ops::{Sub, Div}};
 // use std::{sync::mpsc::{Sender, Receiver, channel}, thread::{Thread,spawn, JoinHandle}};
-use num_dual::{DualNumFloat};
+use num_dual::{DualNumFloat,Dual32};
 
 pub trait Derivable<T> where T: DualNumFloat {
     fn execute_derivative(&self) -> Self;
@@ -12,6 +12,30 @@ pub trait Derivable<T> where T: DualNumFloat {
 pub trait Coerceable<T> where T: DualNumFloat{
     fn coerce_to(&self) -> T;
     fn coerce_from(value: T) -> Self;
+}
+
+impl Derivable<f32> for Dual32 {
+    fn execute_derivative(&self) -> Self {
+        return self.derive()
+    }
+    fn zeroth_derivative(&self) -> f32 {
+        return self.re
+    }
+    fn first_derivative(&self) -> f32 {
+        return self.eps[0]
+    }
+    fn second_derivative(&self) -> f32 {
+        return self.eps[1]
+    }
+}
+
+impl <T: DualNumFloat> Coerceable<T> for Dual32 {
+    fn coerce_to(&self) -> T {
+        return T::from(self.re).unwrap()
+    }
+    fn coerce_from(value: T) -> Self {
+        return Dual32::from_re(value.to_f32().unwrap())
+    }
 }
 
 fn newton<'a, F, N, T>(f: F, guess: T, patience: i32, tolerance: T) -> Option<T>
@@ -160,31 +184,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use num_dual::{Dual32, DualNumFloat, DualNum};
-
-    impl Derivable<f32> for Dual32 {
-        fn execute_derivative(&self) -> Self {
-            return self.derive()
-        }
-        fn zeroth_derivative(&self) -> f32 {
-            return self.re
-        }
-        fn first_derivative(&self) -> f32 {
-            return self.eps[0]
-        }
-        fn second_derivative(&self) -> f32 {
-            return self.eps[1]
-        }
-    }
-    
-    impl <T: DualNumFloat> Coerceable<T> for Dual32 {
-        fn coerce_to(&self) -> T {
-            return T::from(self.re).unwrap()
-        }
-        fn coerce_from(value: T) -> Self {
-            return Dual32::from_re(value.to_f32().unwrap())
-        }
-    }
+    use num_dual::{Dual32, DualNum};
 
     #[test]
     fn find_sine_root_newton() {
