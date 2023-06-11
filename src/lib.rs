@@ -38,13 +38,43 @@ impl <T: DualNumFloat> Coerceable<T> for Dual32 {
     }
 }
 
-fn newton<'a, F, N, T>(f: F, guess: T, patience: i32, tolerance: T) -> Option<T>
+pub struct NewtonOptions<T> where T: DualNumFloat {
+    pub guess: T,
+    pub patience: i32,
+    pub tolerance: T
+}
+
+pub struct BisectionOptions<T> where T: DualNumFloat {
+    pub lower: T,
+    pub upper: T,
+    pub resolution: i32
+}
+
+pub struct RootSearchOptions<T> where T: DualNumFloat {
+    pub patience: i32,
+    pub tolerance: T,
+    pub lower: T,
+    pub upper: T,
+    pub resolution: i32
+}
+
+pub struct NewtonResult<T> where T: DualNumFloat {
+    pub root: Option<T>,
+    pub iterations: i32
+}
+
+pub struct BisectionResult<T> where T: DualNumFloat {
+    pub lower: T,
+    pub upper: T,
+}
+
+fn newton<'a, F, N, T>(f: F, opts: NewtonOptions<T>) -> NewtonResult<T>
 where
     F: Fn(N) -> N + Send + Sync + 'a,
     N: Derivable<T> + Coerceable<T> + Display + Copy,
     T: DualNumFloat
 {
-    let mut current: T = guess;
+    let mut current: T = opts.guess;
     let mut count = 0;
     loop {
         count += 1;
@@ -52,126 +82,84 @@ where
         let z = f(x);
         let next = x.zeroth_derivative() - z.zeroth_derivative() / z.first_derivative();
         let diff = next - current;
-        if diff.abs() < tolerance {
+        if diff.abs() < opts.tolerance {
             println!("Found root at: {}", next);
-            return Some(next);
+            return NewtonResult{
+                root: Some(next),
+                iterations: count
+            };
         } else {
-            if count > patience {
-                println!("Failed to find root with initial guess of {}", guess);
+            if count > opts.patience {
+                println!("Failed to find root with initial guess of {}", opts.guess);
                 println!("Last iteration was: {}", current);
                 println!("Try updating the initial guess or increasing the tolerance or patience");
-                return None;
+                return NewtonResult{
+                    root: None,
+                    iterations: count
+                };
             }
             current = next;
         }
     }
 }
 
-fn find_bisections<F, N, T>(f: F, lower: T, upper: T, resolution: i32) -> Vec<(T, T)>
+fn find_bisections<F, N, T>(f: F, opts: BisectionOptions<T>) -> Vec<BisectionResult<T>>
 where
     F: Fn(N) -> N + Sync + Send + Copy,
     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
     T: DualNumFloat
 {
-    let step = (upper - lower) / T::from(resolution).unwrap() + T::epsilon();
+    let step = (opts.upper - opts.lower) / T::from(opts.resolution).unwrap() + T::epsilon();
     // Add off-set to step to deal with roots at middle of lower and upper range
-    let mut values: Vec<(T, T)> = Vec::new();
+    let mut values: Vec<BisectionResult<T>> = Vec::new();
 
-    for i in 0..resolution {
-        let a = lower + step * T::from(i).unwrap();
-        let b = lower + step * T::from(i+1).unwrap();
+    for i in 0..opts.resolution {
+        let a = opts.lower + step * T::from(i).unwrap();
+        let b = opts.lower + step * T::from(i+1).unwrap();
         let fa = f(N::coerce_from(a));
         let fb = f(N::coerce_from(b));
         let pos2neg = fa.zeroth_derivative() > T::zero() && fb.zeroth_derivative() < T::zero();
         let neg2pos = fa.zeroth_derivative() < T::zero() && fb.zeroth_derivative() > T::zero();
         if pos2neg || neg2pos {
-            values.push((a, b));
+            values.push(BisectionResult{lower: a, upper: b});
         }
     };
     values
 }
 
-// fn find_bisections<F, N, T>(f: F, lower: T, upper: T) -> Vec<(T,T)>
-// where
-//     F: Fn(N) -> N + Sync + Send + Copy + 'static,
-//     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
-//     T: DualNumFloat
-// {
-//     let tolerance = (upper - lower) / T::from(1000).unwrap();
-//     let mut values: Vec<(T, T)> = Vec::new();
-//     let (values_tx, values_rx): (Sender<(T,T)>, Receiver<(T, T)>) = channel();
-//     let (threads_tx, threads_rx): (Sender<JoinHandle<()>>, Receiver<JoinHandle<()>>) = channel();
-//     resolve_bisections(f.clone(), lower, upper, tolerance, values_tx, threads_tx);
-//     for bisection in values_rx {
-//         println!("Found root between {} and {}", bisection.0, bisection.1);
-//         values.push(bisection);
-//     }
-//     for handle in threads_rx {
-//         println!("Waiting for thread to finish");
-//         handle.join().unwrap()
-//     }
-//     values
-// }
-
-// fn resolve_bisections<F, N, T>(f: F, lower: T, upper: T, tolerance: T, values_tx: Sender<(T,T)>, threads_tx: Sender<JoinHandle<()>>)
-// where
-//     F: Fn(N) -> N + Sync + Send + Copy + 'static,
-//     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
-//     T: DualNumFloat
-// {
-//     let threads_tx_clone = threads_tx.clone();
-//     let child = spawn(move || {
-//         let fa = f(N::coerce_from(lower));
-//         let fb = f(N::coerce_from(upper));
-
-//         let pos2neg = fa.zeroth_derivative() > T::zero() && fb.zeroth_derivative() < T::zero();
-//         let neg2pos = fa.zeroth_derivative() < T::zero() && fb.zeroth_derivative() > T::zero();
-
-//         if pos2neg || neg2pos {
-//             if upper - lower < tolerance {
-//                 values_tx.send((lower, upper)).unwrap();
-//             } else {
-//                 let mid = (upper + lower) / T::from(2).unwrap();
-//                 let (threads_tx2, threads_rx): (Sender<JoinHandle<()>>, Receiver<JoinHandle<()>>) = channel();
-//                 resolve_bisections(f.clone(), lower, mid-T::epsilon(), tolerance, values_tx.clone(), threads_tx2.clone());
-//                 resolve_bisections(f.clone(), mid+T::epsilon(), upper, tolerance, values_tx.clone(), threads_tx2);
-//                 for handle in threads_rx {
-//                     threads_tx_clone.send(handle).unwrap();
-//                 }
-//             }
-//         }
-//     });
-//     threads_tx.send(child).unwrap();
-// }
-
-pub fn root_search<F, N, T>(f: F, lower: T, upper: T, patience: i32, tolerance: T, resolution: i32) -> (Vec<T>, Vec<(T, T)>)
+pub fn root_search<F, N, T>(f: F, opts: RootSearchOptions<T>) -> (Vec<T>, Vec<BisectionResult<T>>)
 where
     F: Fn(N) -> N + Sync + Send + Copy,
     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
     T: DualNumFloat
 {
-    if lower > upper {
+    if opts.lower > opts.upper {
         panic!("Lower bound must be greater than upper bound")
     }
-    if lower == upper {
+    if opts.lower == opts.upper {
         panic!("Bounds cannot be the same")
     }
-    let bisections = find_bisections(f, lower, upper, resolution);
+    let bisections = find_bisections(f, BisectionOptions{
+        lower: opts.lower,
+        upper: opts.upper,
+        resolution: opts.resolution
+    });
     let mut roots: Vec<T> = Vec::new();
     for bisection in &bisections {
         let res = T::from(100).unwrap();
-        let step = (bisection.1 - bisection.0) / res;
+        let step = (bisection.upper - bisection.lower) / res;
         for i in 0..res.to_i32().unwrap() {
-            let guess = bisection.0 + (T::from(i).unwrap() * step);
-            let root = newton(f, guess, patience, tolerance);
-            if root.is_none() {
+            let guess = bisection.lower + (T::from(i).unwrap() * step);
+            let res = newton(f, NewtonOptions{
+                guess: guess,
+                patience: opts.patience,
+                tolerance: opts.tolerance
+            });
+            if res.root.is_none() {
                 break;
             }
-            let root = root.unwrap();
-            if bisection.0 < root && root < bisection.1 {
-                roots.push(root);
-                break;
-            } else if bisection.0 < root && root < bisection.1 {
+            let root = res.root.unwrap();
+            if bisection.lower < root && root < bisection.upper {
                 roots.push(root);
                 break;
             }
@@ -191,8 +179,12 @@ mod tests {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let root = newton::<_,Dual32,f32>(&sine, 2.0, 1000, 0.0001);
-        assert_eq!(std::f32::consts::PI, root.unwrap())
+        let res = newton::<_,Dual32,f32>(&sine, NewtonOptions{
+            guess: 2.0,
+            patience: 1000,
+            tolerance: 0.0001
+        });
+        assert_eq!(std::f32::consts::PI, res.root.unwrap())
     }
 
     #[test]
@@ -200,8 +192,12 @@ mod tests {
         fn cosine<D: DualNum<f32>>(x: D) -> D {
             x.cos()
         }
-        let root = newton::<_,Dual32,f32>(&cosine, 2.0, 1000, 0.0001);
-        assert_eq!(std::f32::consts::PI / 2.0, root.unwrap())
+        let res = newton::<_,Dual32,f32>(&cosine, NewtonOptions{
+            guess: 2.0,
+            patience: 1000,
+            tolerance: 0.0001
+        });
+        assert_eq!(std::f32::consts::PI / 2.0, res.root.unwrap())
     }
 
     #[test]
@@ -209,9 +205,13 @@ mod tests {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let bisections = find_bisections::<_,Dual32,f32>(&sine, -5.0, 5.0, 1000);
+        let bisections = find_bisections::<_,Dual32,f32>(&sine, BisectionOptions{
+            lower: -5.0, 
+            upper: 5.0, 
+            resolution: 1000
+        });
         for bisection in &bisections {
-            println!("bisection: ({},{})", bisection.0, bisection.1)
+            println!("bisection: ({},{})", bisection.lower, bisection.upper)
         }
         assert_eq!(bisections.len(), 3)
     }
@@ -221,9 +221,13 @@ mod tests {
         fn cosine<D: DualNum<f32>>(x: D) -> D {
             x.cos()
         }
-        let bisections = find_bisections::<_,Dual32,f32>(&cosine, -5.0, 5.0, 1000);
+        let bisections = find_bisections::<_,Dual32,f32>(&cosine, BisectionOptions{
+            lower: -5.0, 
+            upper: 5.0, 
+            resolution: 1000
+        });
         for bisection in &bisections {
-            println!("bisection: ({},{})", bisection.0, bisection.1)
+            println!("bisection: ({},{})", bisection.lower, bisection.upper)
         }
         assert_eq!(bisections.len(), 4)
     }
@@ -233,7 +237,13 @@ mod tests {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let roots = root_search::<_,Dual32,f32>(&sine, -5.0, 5.0, 2000, 0.0001, 1000);
+        let roots = root_search::<_,Dual32,f32>(&sine, RootSearchOptions{
+            lower: -5.0,
+            upper: 5.0,
+            patience: 2000,
+            tolerance: 0.0001,
+            resolution: 1000
+        });
         for root in &roots.0 {
             println!("root: {}", root);
         }
@@ -248,7 +258,13 @@ mod tests {
         fn cosine<D: DualNum<f32>>(x: D) -> D {
             x.cos()
         }
-        let roots = root_search::<_,Dual32,f32>(&cosine, -5.0, 5.0, 2000, 0.0001, 1000);
+        let roots = root_search::<_,Dual32,f32>(&cosine, RootSearchOptions{
+            lower: -5.0,
+            upper: 5.0,
+            patience: 2000,
+            tolerance: 0.0001,
+            resolution: 1000
+        });
         for root in &roots.0 {
             println!("root: {}", root);
         }
