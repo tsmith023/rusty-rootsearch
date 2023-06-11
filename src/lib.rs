@@ -84,7 +84,7 @@ where
         let next = x.zeroth_derivative() - z.zeroth_derivative() / z.first_derivative();
         let diff = next - current;
         if diff.abs() < opts.tolerance {
-            println!("Found root at: {}", next);
+            // println!("Found root at: {}", next);
             return NewtonResult{
                 root: Some(next),
                 iterations: count
