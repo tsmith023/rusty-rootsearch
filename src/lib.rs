@@ -68,6 +68,11 @@ pub struct BisectionResult<T> where T: DualNumFloat {
     pub upper: T,
 }
 
+pub struct RootSearchResult<T> where T: DualNumFloat {
+    pub roots: Vec<T>,
+    pub bisections: Vec<BisectionResult<T>>,
+}
+
 fn newton<'a, F, N, T>(f: F, opts: NewtonOptions<T>) -> NewtonResult<T>
 where
     F: Fn(N) -> N + Send + Sync + 'a,
@@ -127,7 +132,7 @@ where
     values
 }
 
-pub fn root_search<F, N, T>(f: F, opts: RootSearchOptions<T>) -> (Vec<T>, Vec<BisectionResult<T>>)
+pub fn root_search<F, N, T>(f: F, opts: RootSearchOptions<T>) -> RootSearchResult<T>
 where
     F: Fn(N) -> N + Sync + Send + Copy,
     N: Derivable<T> + Coerceable<T> + Display + Copy + Sub + Div,
@@ -166,7 +171,7 @@ where
         }
 
     }
-    (roots, bisections)
+    RootSearchResult{roots, bisections}
 }
 
 #[cfg(test)]
@@ -237,20 +242,20 @@ mod tests {
         fn sine<D: DualNum<f32>>(x: D) -> D {
             x.sin()
         }
-        let roots = root_search::<_,Dual32,f32>(&sine, RootSearchOptions{
+        let res = root_search::<_,Dual32,f32>(&sine, RootSearchOptions{
             lower: -5.0,
             upper: 5.0,
             patience: 2000,
             tolerance: 0.0001,
             resolution: 1000
         });
-        for root in &roots.0 {
+        for root in &res.roots {
             println!("root: {}", root);
         }
-        assert_eq!(roots.0.len(), 3);
-        assert!(roots.0.contains(&std::f32::consts::PI));
-        assert!(roots.0.contains(&(-std::f32::consts::PI)));
-        assert!(roots.0.contains(&0.0));
+        assert_eq!(res.roots.len(), 3);
+        assert!(res.roots.contains(&std::f32::consts::PI));
+        assert!(res.roots.contains(&(-std::f32::consts::PI)));
+        assert!(res.roots.contains(&0.0));
     }
 
     #[test]
@@ -258,21 +263,21 @@ mod tests {
         fn cosine<D: DualNum<f32>>(x: D) -> D {
             x.cos()
         }
-        let roots = root_search::<_,Dual32,f32>(&cosine, RootSearchOptions{
+        let res = root_search::<_,Dual32,f32>(&cosine, RootSearchOptions{
             lower: -5.0,
             upper: 5.0,
             patience: 2000,
             tolerance: 0.0001,
             resolution: 1000
         });
-        for root in &roots.0 {
+        for root in &res.roots {
             println!("root: {}", root);
         }
-        assert_eq!(roots.0.len(), 4);
-        assert!(roots.0.contains(&std::f32::consts::FRAC_PI_2));
-        assert!(roots.0.contains(&(-std::f32::consts::FRAC_PI_2)));
-        assert!(roots.0.contains(&(std::f32::consts::FRAC_PI_2 * 3.0)));
-        assert!(roots.0.contains(&(-std::f32::consts::FRAC_PI_2 * 3.0)));
+        assert_eq!(res.roots.len(), 4);
+        assert!(res.roots.contains(&std::f32::consts::FRAC_PI_2));
+        assert!(res.roots.contains(&(-std::f32::consts::FRAC_PI_2)));
+        assert!(res.roots.contains(&(std::f32::consts::FRAC_PI_2 * 3.0)));
+        assert!(res.roots.contains(&(-std::f32::consts::FRAC_PI_2 * 3.0)));
     }
 
 
