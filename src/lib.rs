@@ -6,7 +6,6 @@ pub trait Derivable<T> where T: DualNumFloat {
     fn execute_derivative(&self) -> Self;
     fn zeroth_derivative(&self) -> T;
     fn first_derivative(&self) -> T;
-    fn second_derivative(&self) -> T;
 }
 
 pub trait Coerceable<T> where T: DualNumFloat{
@@ -16,16 +15,13 @@ pub trait Coerceable<T> where T: DualNumFloat{
 
 impl Derivable<f32> for Dual32 {
     fn execute_derivative(&self) -> Self {
-        return self.derive()
+        return self.derivative()
     }
     fn zeroth_derivative(&self) -> f32 {
         return self.re
     }
     fn first_derivative(&self) -> f32 {
-        return self.eps[0]
-    }
-    fn second_derivative(&self) -> f32 {
-        return self.eps[1]
+        return self.eps
     }
 }
 
