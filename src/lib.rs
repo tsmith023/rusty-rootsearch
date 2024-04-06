@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::{Sub, Div}};
+use std::{env, fmt::Display, ops::{Sub, Div}};
 // use std::{sync::mpsc::{Sender, Receiver, channel}, thread::{Thread,spawn, JoinHandle}};
 use num_dual::{DualNumFloat,Dual32};
 
@@ -77,6 +77,7 @@ where
 {
     let mut current: T = opts.guess;
     let mut count = 0;
+    let debug = env::var("DEBUG").unwrap() == "true";
     loop {
         count += 1;
         let x = N::coerce_from(current).execute_derivative();
@@ -84,16 +85,20 @@ where
         let next = x.zeroth_derivative() - z.zeroth_derivative() / z.first_derivative();
         let diff = next - current;
         if diff.abs() < opts.tolerance {
-            // println!("Found root at: {}", next);
+            if debug {
+                println!("Found root at: {}", next);
+            }
             return NewtonResult{
                 root: Some(next),
                 iterations: count
             };
         } else {
             if count > opts.patience {
-                println!("Failed to find root with initial guess of {}", opts.guess);
-                println!("Last iteration was: {}", current);
-                println!("Try updating the initial guess or increasing the tolerance or patience");
+                if debug {
+                    println!("Failed to find root with initial guess of {}", opts.guess);
+                    println!("Last iteration was: {}", current);
+                    println!("Try updating the initial guess or increasing the tolerance or patience");
+                }
                 return NewtonResult{
                     root: None,
                     iterations: count
