@@ -77,7 +77,11 @@ where
 {
     let mut current: T = opts.guess;
     let mut count = 0;
-    let debug = env::var("DEBUG").unwrap() == "true";
+    let debug_env = env::var("DEBUG");
+    let debug = match debug_env {
+        Ok(val) => val == "true",
+        Err(_) => false
+    };
     loop {
         count += 1;
         let x = N::coerce_from(current).execute_derivative();
